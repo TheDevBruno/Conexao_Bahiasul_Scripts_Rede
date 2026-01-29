@@ -1,28 +1,31 @@
 #!/bin/bash
-# config-teclado-abnt2.sh - Configura ABNT2 Mint 22 (TheDevBruno)
-# Uso: ./config-teclado-abnt2.sh
+# config-teclado-hp-abnt2.sh - Fix /? tecla EliteBook (TheDevBruno)
+echo "🔧 Fixando tecla /? ABNT2..."
 
-echo "🔧 Configurando Teclado ABNT2 (Português Brasil)..."
+# Detecta interface wlan (ajuste se necessário)
+sudo localectl set-keymap br-abnt2
+setxkbmap -model abnt2 -layout br -variant abnt2 -option lv3:ralt_alt -option compose:ralt
 
-# Backup layout atual
-sudo cp /etc/default/keyboard /etc/default/keyboard.bak 2>/dev/null
+# Fix específico /? (key <AD12>)
+xmodmap -e "keycode 94 = slash question slash question" 2>/dev/null || echo "xmodmap OK"
 
-# Configuração permanente
-sudo sed -i 's/XKBDEFAULTLAYOUT=.*/XKBDEFAULTLAYOUT="br"/' /etc/default/keyboard
-sudo sed -i 's/XKBVARIANT=.*/XKBVARIANT="abnt2"/' /etc/default/keyboard
-sudo sed -i 's/XKBMODEL=.*/XKBMODEL="abnt2"/' /etc/default/keyboard
-sudo sed -i 's/XKBOPTIONS=.*/XKBOPTIONS="lv3:ralt_switch"/' /etc/default/keyboard
+# Teste
+echo "✅ Teste tecla /?:"
+echo "  Shift + tecla = ?"
+echo "  AltGr + tecla = /"
+echo -n "Digite: "; read test
+echo "Input: '$test'"
 
-# Aplicar imediato
-setxkbmap -model abnt2 -layout br -variant abnt2 -option lv3:ralt_switch
+# Persistente (adiciona autostart)
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/abnt2.desktop << EOF
+[Desktop Entry]
+Type=Application
+Exec=setxkbmap -model abnt2 -layout br -variant abnt2
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=ABNT2 Keyboard
+EOF
 
-# Recarregar
-sudo service keyboard-setup restart 2>/dev/null || sudo systemctl restart display-manager
-
-# Teste caracteres
-echo "✅ Teste ABNT2 (copie e cole):"
-echo "AltGr+Q = /    Shift+2 = \"    AltGr+1 = |    Shift+; = :"
-echo -n "Digite teste: "; read input
-echo "Seu input: '$input'"
-
-echo "✅ Configurado! Reboot recomendado: sudo reboot"
+echo "✅ Fix aplicado! Teste /? e reboot."
