@@ -1,6 +1,6 @@
 cat > ~/Downloads/Conexao_Bahiasul_Scripts_Rede/ubiquiti-browser.sh << 'EOF'
 #!/bin/bash
-# Ubiquiti Browser - Chrome + IP MANTIDO até reset DHCP
+# Ubiquiti Browser - Chrome + IP MANTIDO (sem sudo + sem reset DHCP)
 
 clear
 echo "📡 Ubiquiti 192.168.1.20 - Configuração..."
@@ -29,18 +29,27 @@ echo ""
 if ping -c 2 192.168.1.20 >/dev/null 2>&1; then
   echo "✅ ANTENA ONLINE!"
   
-  # Fix Chrome sandbox
-  sudo chown root:root /opt/google/chrome/chrome-sandbox 2>/dev/null
-  sudo chmod 4755 /opt/google/chrome/chrome-sandbox 2>/dev/null
+  # 6. Fix Chrome sandbox SEM SUDO (timeout rápido)
+  timeout 2 sudo chown root:root /opt/google/chrome/chrome-sandbox 2>/dev/null || true
+  timeout 2 sudo chmod 4755 /opt/google/chrome/chrome-sandbox 2>/dev/null || true
   
-  # 6. Chrome SEM SSL warnings
+  # 7. Chrome SEM SSL warnings
   echo "🌐 Chrome → 192.168.1.20 (ubnt/ubnt)"
+  echo "💡 IP 192.168.1.10 MANTIDO até reset manual"
+  echo ""
   google-chrome-stable \
     --no-sandbox \
     --disable-web-security \
     --ignore-certificate-errors \
     --disable-cert-error-top-level-navigation \
     http://192.168.1.20 &
+    
+  echo ""
+  echo "✅ Chrome aberto! Configure a antena."
+  echo "⚠️  IP 192.168.1.10 FICA ATIVO (reset no menu principal)"
+  echo ""
+  read -p "Pressione ENTER para voltar ao menu..."
+  
 else
   echo "❌ ANTENA OFFLINE!"
   echo "  - Cabo OK?"
@@ -49,23 +58,10 @@ else
   exit 1
 fi
 
-# 7. Aguarda técnico (IP MANTIDO)
-read -p "✅ Configure antena → ENTER quando terminar..."
-
-# 8. Reset DHCP (FINAL)
 echo ""
-echo "🔄 Restaurando DHCP..."
-nmcli con del ubnt-temp
-nmcli dev disconnect iface "$IFACE" 2>/dev/null
-sleep 2
-nmcli dev connect "$IFACE"
-echo "✅ DHCP ativo!"
-
-# 9. Abre configurações rede
-echo ""
-echo "🖥️  Abrindo Configurações de Rede..."
-sleep 2
-nm-connection-editor &
+echo "✅ ubiquiti-browser.sh concluído!"
+echo "🌐 IP 192.168.1.10 MANTIDO ATIVO"
+echo "🔙 Volte ao ./tecnico-master.sh para reset DHCP"
 EOF
 
 chmod +x ~/Downloads/Conexao_Bahiasul_Scripts_Rede/ubiquiti-browser.sh
