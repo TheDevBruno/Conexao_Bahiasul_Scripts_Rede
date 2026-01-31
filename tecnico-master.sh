@@ -1,60 +1,68 @@
 #!/bin/bash
-# tecnico-master.sh - Menu Técnico Completo (TheDevBruno 2026)
+# tecnico-master.sh - V3 AUTO-CRIA (TheDevBruno 2026)
 REPO_DIR="$HOME/Downloads/Conexao_Bahiasul_Scripts_Rede"
-UPDATE_URL="https://github.com/TheDevBruno/Conexao_Bahiasul_Scripts_Rede.git"
 
-# 1. Git Update Auto
-function update_repo() {
-  if [ -d "$REPO_DIR" ]; then
-    cd "$REPO_DIR" || return
-    echo "🔄 Atualizando GitHub..."
-    git stash --include-untracked 2>/dev/null
-    git pull origin main || git reset --hard origin/main
-    chmod +x *.sh
-    echo "✅ Repo atualizado!"
-  else
-    git clone "$UPDATE_URL" "$REPO_DIR"
-    cd "$REPO_DIR"
-  fi
+# Cores
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' NC='\033[0m'
+
+# 1. Cria pasta/repo se não existir
+mkdir -p "$REPO_DIR"
+cd "$REPO_DIR" || exit 1
+
+# 2. AUTO-CRIA scripts essenciais
+cat > pppoe-bahiasul.sh << 'EOF'
+#!/bin/bash
+IFACE=$(nmcli dev | grep ethernet | head -1 | awk '{print $1}')
+nmcli con del pppoe-bahiasul 2>/dev/null
+nmcli con add type pppoe ifname "$IFACE" con-name pppoe-bahiasul username bahiasul24 password bahiasul24
+nmcli con up pppoe-bahiasul
+sleep 5
+echo "=== PPPoE $(date) ==="
+nmcli con show pppoe-bahiasul | grep GENERAL
+ping -c 3 8.8.8.8
+speedtest-cli --simple
+EOF
+
+cat > ubiquiti-browser.sh << 'EOF'
+#!/bin/bash
+IFACE=$(nmcli dev | grep ethernet | head -1 | awk '{print $1}')
+nmcli con mod "$IFACE" ipv4.method manual ipv4.addresses 192.168.1.10/24
+nmcli con up "$IFACE"
+sleep 2
+ping -c 2 192.168.1.20 && firefox http://192.168.1.20 || echo "Antena offline!"
+EOF
+
+chmod +x *.sh
+
+# 3. Reset DHCP
+reset_dhcp() {
+  IFACE=$(nmcli dev | grep ethernet | head -1 | awk '{print $1}')
+  [ -n "$IFACE" ] && nmcli con mod "$IFACE" ipv4.method auto && nmcli con up "$IFACE"
+  echo -e "${GREEN}DHCP OK!${NC}"
 }
 
-# 2. Reset DHCP (fim testes)
-function reset_dhcp() {
-  for iface in $(nmcli dev | grep ethernet | awk '{print $1}'); do
-    nmcli con mod "$iface" ipv4.method auto
-    nmcli con down "$iface" 2>/dev/null
-    nmcli con up "$iface"
-  done
-  echo "🔄 DHCP restaurado!"
-}
-
-# 3. Menu Principal
-update_repo
+# 4. Menu principal
 clear
 while true; do
-  CHOICE=$(whiptail --title "Técnico Rede - Conexão Bahia Sul" --menu "Escolha teste:" 18 60 8 \
+  IFACE=$(nmcli dev | grep ethernet | head -1 | awk '{print $1}')
+  CHOICE=$(whiptail --title "Técnico Rede V3 - $IFACE" --menu "Scripts AUTO-CRIADOS!" 20 70 7 \
     "1" "PPPoE Bahiasul24 + Speedtest" \
-    "2" "Ubiquiti Antena 192.168.1.20" \
-    "3" "WiFi Scan + Canais (LinSSID)" \
+    "2" "Ubiquiti 192.168.1.20" \
+    "3" "WiFi Scan LinSSID" \
     "4" "Winbox Mikrotik" \
-    "5" "Ping Completo + Relatório" \
-    "6" "Config Teclado ABNT2" \
-    "7" "Reset Total DHCP" \
+    "5" "Ping + Relatório" \
+    "6" "Reset DHCP" \
     "0" "Sair" 3>&1 1>&2 2>&3)
   
-  exitstatus=$?
-  if [ $exitstatus = 1 ]; then break; fi
+  [ $? != 0 ] && reset_dhcp && exit 0
 
   case $CHOICE in
-    1) cd "$REPO_DIR" && ./pppoe-bahiasul.sh ;;
-    2) cd "$REPO_DIR" && ./ubiquiti-browser.sh ;;
-    3) sudo apt install linssid -y && linssid & ;;
-    4) wine ~/Downloads/winbox64.exe & ;;
-    5) cd "$REPO_DIR" && ./relatorio-tecnico.sh ;;
-    6) cd "$REPO_DIR" && ./fix-keycode105.sh ;;
-    7) reset_dhcp ;;
-    0) reset_dhcp && exit 0 ;;
+    1) sudo apt install speedtest-cli -y; ./pppoe-bahiasul.sh; read -p "Enter..." ;;
+    2) ./ubiquiti-browser.sh; read -p "Enter..." ;;
+    3) sudo apt install linssid -y; pkexec linssid &; read -p "Enter..." ;;
+    4) wine ~/Downloads/winbox64.exe & || echo "Baixe winbox64.exe"; read -p "Enter..." ;;
+    5) echo "=== $(date) ===" > ~/Desktop/relatorio.txt; ping -c 3 8.8.8.8 >> ~/Desktop/relatorio.txt; speedtest-cli --simple >> ~/Desktop/relatorio.txt 2>/dev/null; xdg-open ~/Desktop/relatorio.txt; read -p "Enter..." ;;
+    6) reset_dhcp; read -p "Enter..." ;;
+    0) reset_dhcp; exit 0 ;;
   esac
-  
-  whiptail --msgbox "Teste concluído! DHCP resetado." 8 40
 done
