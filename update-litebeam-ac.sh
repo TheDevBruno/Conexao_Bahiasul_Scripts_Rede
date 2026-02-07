@@ -1,106 +1,122 @@
 #!/bin/bash
-# update-litebeam-ac.sh - Atualização AUTOMÁTICA LiteBeam AC v8.7.19 via SSH
-# Repositório: /home/bahiasul/Downloads/Conexao_Bahiasul_Scripts_Rede/Atualizações Ubiquit Litebeam AC
+# UPDATE-LITEBEAM-AC v8.7.19 - CORRIGIDO (SCP + cleanup)
+
+set -e  # Para execução em erro
+
+REPO_DIR="$HOME/Downloads/Conexao_Bahiasul_Scripts_Rede"
+LITEBEAM_IP="192.168.1.20"
+SSH_USER="ubnt"
+SSH_PASS="ubnt"
+FIRMWARE_VERSION="v8.7.19"
+FIRMWARE_FILE="LiteBeam-AC-EU.bin"
+FIRMWARE_URL="https://dl.ui.com/firmwares/xm/v${FIRMWARE_VERSION//\./}/LiteBeam-AC-EU.bin"
+
+# FUNÇÃO CLEANUP (DECLARADA PRIMEIRO)
+cleanup() {
+    echo "🧹 Limpando configurações temporárias..."
+    nmcli con down litebeam-temp 2>/dev/null
+    nmcli con del litebeam-temp 2>/dev/null
+    rm -f /tmp/${FIRMWARE_FILE}
+    echo "✅ Cleanup concluído!"
+}
+
+# TRAP para garantir cleanup mesmo com Ctrl+C
+trap cleanup EXIT INT TERM
 
 clear
-echo "=== ATUALIZAÇÃO LiteBeam AC v8.7.19 ==="
-echo "Notebook Técnico - Linux Mint - Bahiasul24"
-echo
+echo "🚀 LiteBeam AC Auto Update $FIRMWARE_VERSION"
+echo "============================================="
 
-# Configurações
-FW_DIR="/home/bahiasul/Downloads/Conexao_Bahiasul_Scripts_Rede/Atualizações Ubiquit Litebeam AC"
-FW_FILE="WA.v8.7.19.48279.250811.0636.bin"  # Nome esperado do firmware
-ANTENA_IP="192.168.1.20"
-USER="ubnt"
-PASS="ubnt"
-CON_NAME="ubnt-update"
-
-# Detecta interface ethernet
+# 1. DETECTA INTERFACE
 IFACE=$(nmcli dev | grep ethernet | head -1 | awk '{print $1}')
-if [ -z "$IFACE" ]; then
-    echo "❌ ERRO: Interface ethernet não encontrada!"
-    read -p "Pressione ENTER para sair..."
-    exit 1
-fi
-echo "✅ Interface: $IFACE"
+[ -z "$IFACE" ] && { echo "❌ Interface ethernet não encontrada!"; exit 1; }
+echo "📡 Interface: $IFACE"
 
-# Verifica arquivo firmware
-if [ ! -f "$FW_DIR/$FW_FILE" ]; then
-    echo "❌ ERRO: Firmware $FW_FILE não encontrado em $FW_DIR"
-    echo "Verifique o diretório e nome do arquivo"
-    read -p "Pressione ENTER para sair..."
-    exit 1
-fi
-echo "✅ Firmware: $FW_DIR/$FW_FILE"
-
-# Configura IP estático 192.168.1.10
+# 2. CONFIGURA IP ESTÁTICO 192.168.1.10
 echo "🔧 Configurando IP 192.168.1.10..."
-nmcli con del $CON_NAME 2>/dev/null
-nmcli con add type ethernet ifname $IFACE con-name $CON_NAME \
-    ipv4.method manual ipv4.addresses 192.168.1.10/24 ipv4.gateway 192.168.1.1
-nmcli con up $CON_NAME
+nmcli con del litebeam-temp 2>/dev/null
+nmcli con add type ethernet ifname "$IFACE" con-name litebeam-temp \
+  ipv4.method manual ipv4.addresses "192.168.1.10/24" ipv4.gateway "192.168.1.1"
+nmcli con up litebeam-temp
 sleep 3
 
-# Testa conectividade
-if ! ping -c 3 $ANTENA_IP >/dev/null 2>&1; then
-    echo "❌ ANTENA OFFLINE em $ANTENA_IP"
-    echo "- Reset físico da antena"
-    echo "- Cabo e fonte OK?"
-    nmcli con down $CON_NAME 2>/dev/null
-    read -p "Pressione ENTER para sair..."
+ip addr show "$IFACE" | grep 192.168.1.10 || { echo "❌ Erro IP!"; exit 1; }
+
+# 3. TESTA CONECTIVIDADE
+echo "🔍 Testando LiteBeam $LITEBEAM_IP..."
+if ! ping -c 3 "$LITEBEAM_IP" > /dev/null 2>&1; then
+    echo "❌ Antena OFFLINE!"
+    echo "  - Cabo conectado?"
+    echo "  - Antena ligada?"
     exit 1
 fi
-echo "✅ Antena online: $ANTENA_IP"
+echo "✅ Antena online: $LITEBEAM_IP"
 
-# === VERIFICA VERSÃO ATUAL ===
+# 4. VERIFICA VERSÃO ATUAL (SSH)
 echo "🔍 Verificando versão atual da antena..."
-CURRENT_VER=$(sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-    $USER@$ANTENA_IP "cat /etc/version" 2>/dev/null | grep -o 'v[0-9.]*' || echo "DESCONHECIDO")
-echo "📱 Versão ATUAL da antena: $CURRENT_VER"
-echo "🎯 Versão NOVA: v8.7.19"
+VERSION_ATUAL=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  "$SSH_USER@$LITEBEAM_IP" "cat /etc/version" 2>/dev/null | head -1 || echo "DESCONHECIDO")
+echo "📱 Versão ATUAL da antena: $VERSION_ATUAL"
+echo "🎯 Versão NOVA: $FIRMWARE_VERSION"
 
-if [[ "$CURRENT_VER" == *"8.7.19"* ]]; then
-    echo "ℹ️  Antena já está na versão v8.7.19"
-    read -p "Continuar mesmo assim? (s/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Ss]$ ]]; then
-        echo "Cancelado."
-        cleanup
-        exit 0
-    fi
+# 5. BAIXA FIRMWARE LOCALMENTE (MÉTODO MAIS ESTÁVEL)
+echo "📥 Baixando firmware $FIRMWARE_VERSION..."
+if wget -T 30 -O "/tmp/$FIRMWARE_FILE" "$FIRMWARE_URL"; then
+    echo "✅ Firmware baixado: /tmp/$FIRMWARE_FILE"
+else
+    echo "❌ Falha download! Usando método SSH direto..."
+    # MÉTODO ALTERNATIVO: wget direto na antena
+    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$LITEBEAM_IP" \
+      "wget -O /tmp/fwupdate.bin '$FIRMWARE_URL' && sync"
 fi
 
-# === TRANSFERÊNCIA E ATUALIZAÇÃO ===
+# 6. TRANSFERE FIRMWARE VIA SCP (CORRIGIDO)
 echo "📤 Transferindo firmware via SCP..."
-scp -o StrictHostKeyChecking=no "$FW_DIR/$FW_FILE" $USER@$ANTENA_IP:/tmp/fwupdate.bin >/dev/null 2>&1
-if [ $? -ne 0 ]; then
-    echo "❌ ERRO na transferência SCP"
-    cleanup
+if [ -f "/tmp/$FIRMWARE_FILE" ]; then
+    scp_res=$(timeout 30 sshpass -p "$SSH_PASS" scp -o StrictHostKeyChecking=no \
+      "/tmp/$FIRMWARE_FILE" "$SSH_USER@$LITEBEAM_IP:/tmp/fwupdate.bin" 2>&1)
+    SCP_EXIT=$?
+    
+    if [ $SCP_EXIT -eq 0 ]; then
+        echo "✅ Firmware transferido!"
+    else
+        echo "⚠️  SCP falhou, tentando wget direto na antena..."
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$LITEBEAM_IP" \
+          "rm -f /tmp/fwupdate.bin; wget -O /tmp/fwupdate.bin '$FIRMWARE_URL'"
+    fi
+else
+    echo "❌ Arquivo firmware não encontrado localmente!"
     exit 1
 fi
-echo "✅ Firmware transferido para /tmp/fwupdate.bin"
 
-echo "🔄 Iniciando atualização AUTOMÁTICA..."
-echo "⚠️  NÃO DESLIGUE a antena por 5 minutos!"
-sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no $USER@$ANTENA_IP << EOF
-echo "Firmware em /tmp: \$(ls -lh /tmp/fwupdate.bin)"
-chmod 777 /tmp/fwupdate.bin
-/var/tmp/fwupdate -m /tmp/fwupdate.bin &
-echo "Atualização iniciada em background..."
-echo "Reboot em 60s..."
-sleep 10
-EOF
+# 7. APLICA UPDATE
+echo "🔄 Aplicando firmware v$FIRMWARE_VERSION..."
+sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$LITEBEAM_IP" "
+    if [ -f /tmp/fwupdate.bin ]; then
+        chmod +x /tmp/fwupdate.bin
+        echo 'Iniciando update...'
+        /tmp/fwupdate.bin apply &
+        echo '✅ UPDATE INICIADO! Antena reiniciará em 30-60s'
+        echo 'Aguarde 3-5 minutos antes de testar novamente'
+    else
+        echo '❌ Arquivo fwupdate.bin não encontrado!'
+        exit 1
+    fi
+"
 
-echo ""
-echo "✅ COMANDO DE ATUALIZAÇÃO EXECUTADO!"
-echo "⏳ Aguarde 3-5 minutos para reinício completo..."
-echo "💡 IP 192.168.1.10 permanece ativo"
-
-# Restaura rede (OPCIONAL - comentado para manter IP fixo)
-# cleanup
-
-read -p "Pressione ENTER após verificar a nova versão..."
+RESULT=$?
 cleanup
-echo "✅ update-litebeam-ac.sh CONCLUÍDO!"
-echo "Volte ao tecnico-master.sh"
+
+if [ $RESULT -eq 0 ]; then
+    whiptail --msgbox "🎉 LiteBeam AC ATUALIZADO v$FIRMWARE_VERSION!
+
+Aguarde 3-5min para reinício completo.
+
+IP rede restaurado (DHCP)" 12 60 0
+else
+    whiptail --msgbox "⚠️  Possível falha no update!
+Verifique manualmente: $LITEBEAM_IP" 12 60 0
+fi
+
+echo "✅ Script concluído!"
 
