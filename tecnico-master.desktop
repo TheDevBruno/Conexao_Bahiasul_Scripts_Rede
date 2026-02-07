@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Técnico Master
+Comment=Menu Técnico Bahia Sul
+Exec=cd "/home/bahiasul/Downloads/Conexao_Bahiasul_Scripts_Rede" && ./tecnico-master.sh
+Icon=network-wired
+Terminal=true
+Type=Application
+Categories=Network;System;

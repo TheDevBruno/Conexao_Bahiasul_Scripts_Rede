@@ -1,22 +1,38 @@
 #!/bin/bash
+# AUTO-UPDATE GIT
+echo "🔄 Verificando atualizações do serviço..."
+if [ -d "$REPO_DIR/.git" ]; then
+    cd "$REPO_DIR"
+    git fetch origin main > /dev/null 2>&1
+    if [ $(git rev-parse HEAD) != $(git rev-parse @{u}) ]; then
+        echo "📥 Atualizando do GitHub..."
+        git pull origin main
+        chmod +x *.sh
+        echo "✅ Repositório atualizado!"
+        sleep 1
+    else
+        echo "✅ Já está atualizado!"
+    fi
+    cd - > /dev/null
+fi
 REPO_DIR="$HOME/Downloads/Conexao_Bahiasul_Scripts_Rede"
 clear
 while true; do
   IFACE=$(nmcli dev | grep ethernet | head -1 | awk '{print $1}')
   CHOICE=$(whiptail --title "Técnico Rede v1.0 - $IFACE" --menu "Escolha:" 18 60 7 \
-    "1" "PPPoE Bahiasul24" \
-    "2" "Ubiquiti 192.168.1.20" \
-    "3" "WiFi Scan" \
-    "4" "Winbox" \
-    "5" "Relatório" \
-    "6" "DHCP Reset" \
+    "1" "Teste de usuario PPPoE Bahiasul24" \
+    "2" "Configuração da Antena Ubiquiti 192.168.1.20" \
+    "3" "Analizar canais da rede WiFi Scan" \
+    "4" "Acessar Winbox Mikrotik" \
+    "5" "Teste de Ping 8.8.8.8" \
+    "6" "Resetar DHCP Reset" \
     "0" "Sair" 3>&1 1>&2 2>&3)
   
   [ $? != 0 ] && break
   case $CHOICE in
-    1) sudo apt install speedtest-cli -y; cd "$REPO_DIR" && ./pppoe-bahiasul.sh ;;
+    1) cd "$REPO_DIR" && ./pppoe-bahiasul.sh ;;
     2) cd "$REPO_DIR" && ./ubiquiti-browser.sh ;;
-    3) sudo apt install linssid -y && pkexec linssid & ;;
+    3) pkexec linssid & ;;
     4) wine ~/Downloads/winbox64.exe & ;;
     5) ping -c 3 8.8.8.8 | tee ~/Desktop/relatorio.txt ;;
     6) nmcli dev | grep ethernet | head -1 | awk '{print $1}' | xargs -I {} nmcli con mod {} ipv4.method auto ;;
