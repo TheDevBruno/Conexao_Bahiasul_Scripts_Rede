@@ -1,82 +1,77 @@
 #!/bin/bash
 
-# git-update.sh - Atualiza repo Git + sync_scripts com Git config automático
-# Configura user.name/email globalmente se não definido
-
+# git-update.sh - Push SILENCIOSO com token embutido + sync_scripts
 REPO_DIR="${1:-$(pwd)}"
 MSG_COMMIT="Atualização automática $(date '+%Y-%m-%d %H:%M')"
 SYNC_SCRIPT="$HOME/sync_scripts.sh"
+GITHUB_USER="TheDevBruno"
+GITHUB_TOKEN="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"
+REPO_NAME="Conexao_Bahiasul_Scripts_Rede"
 
-# === CONFIGURAÇÃO AUTOMÁTICA GIT IDENTITY ===
+# === CONFIG GIT IDENTITY ===
 check_git_config() {
-  if ! git config --global user.name >/dev/null 2>&1 || ! git config --global user.email >/dev/null 2>&1; then
-    echo "Configurando identidade Git globalmente..."
-    git config --global user.name "TheDevBruno"
+  if ! git config --global user.name >/dev/null 2>&1; then
+    git config --global user.name "$GITHUB_USER"
     git config --global user.email "brunosilvacontato2018@gmail.com"
-    echo "✓ Identidade Git configurada: TheDevBruno <brunosilvacontato2018@gmail.com>"
+    echo "✓ Git identity configurada"
   fi
 }
 
-cd "$REPO_DIR" || { echo "Erro: Diretório $REPO_DIR não encontrado."; exit 1; }
+# === SETUP AUTENTICAÇÃO TOKEN ===
+setup_auth() {
+  REMOTE_URL=$(git remote get-url origin)
+  TOKEN_URL="https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
+  
+  if [[ "$REMOTE_URL" != *"$GITHUB_TOKEN"* ]]; then
+    echo "Configurando token no remote..."
+    git remote set-url origin "$TOKEN_URL"
+    git config credential.helper store
+    echo "✓ Token configurado - push silencioso ativado"
+  fi
+}
 
-# Verifica se é repo Git
-if [ ! -d .git ]; then
-  echo "Erro: $REPO_DIR não é repositório Git válido."
-  exit 1
-fi
+cd "$REPO_DIR" || { echo "Erro: $REPO_DIR não encontrado."; exit 1; }
 
-echo "=== Git Update - Conexao_Bahiasul_Scripts_Rede ==="
-echo "Repositório: $REPO_DIR"
+[ ! -d .git ] && { echo "Erro: Não é repo Git."; exit 1; }
 
-# Configura Git identity antes de qualquer operação
+echo "🚀 Git Update - $REPO_NAME"
+
 check_git_config
+setup_auth
 
-# Verifica status atual
-if git diff --quiet && git diff --staged --quiet && git ls-files --others --exclude-standard | grep . > /dev/null 2>&1; then
-  echo "Nenhuma mudança detectada. Repo atualizado."
+# Verifica mudanças
+if git diff --quiet HEAD && ! git ls-files --others --exclude-standard | grep .; then
+  echo "✅ Nenhuma mudança. Repo atualizado."
   exit 0
 fi
 
-echo "Mudanças detectadas. Processando..."
+echo "📝 Mudanças detectadas..."
 
-# Git add all
-git add . > /dev/null 2>&1
+# Workflow silencioso
+git add . >/dev/null 2>&1
 
-# Commit se há mudanças staged
 if ! git diff --staged --quiet; then
-  git commit -m "$MSG_COMMIT" || { echo "Erro no commit."; exit 1; }
-  echo "✓ Commit: $MSG_COMMIT"
-else
-  echo "Nenhum arquivo para commit."
+  git commit -m "$MSG_COMMIT"
+  echo "✅ Commit: $MSG_COMMIT"
 fi
 
-# Pull com rebase seguro
-echo "Sincronizando com remoto..."
-if git pull origin main --rebase > /dev/null 2>&1; then
-  echo "✓ Pull concluído"
-else
-  echo "Aviso: Pull pode ter conflitos (continue manualmente)"
-fi
+echo "🔄 Pull + Push silencioso..."
+git pull origin main --rebase >/dev/null 2>&1
 
-# Push
-if git push origin main > /dev/null 2>&1; then
-  echo "✓ Push concluído!"
+# PUSH DEFINITIVO SEM PROMPT
+if GIT_TERMINAL_PROMPTS=0 git push origin main >/dev/null 2>&1; then
+  echo "✅ PUSH CONCLUÍDO!"
   
-  # Sync scripts para Desktop/$HOME
+  # Sync automático Desktop
   if [ -x "$SYNC_SCRIPT" ]; then
-    echo ""
-    echo "=== Sincronizando scripts para Desktop ==="
+    echo "📱 Sincronizando scripts Desktop..."
     "$SYNC_SCRIPT"
-    echo "✓ Scripts atualizados no Desktop!"
-  else
-    echo "Aviso: sync_scripts.sh não encontrado em $SYNC_SCRIPT"
+    echo "✅ Scripts atualizados no Desktop!"
   fi
 else
-  echo "✗ Erro no push. Verifique conexão/autenticação."
+  echo "❌ Push falhou. Token inválido?"
   exit 1
 fi
 
-echo ""
-echo "✅ Processo completo! Repo atualizado + scripts sincronizados."
-echo "Status final: $(git status --short)"
+echo "🎉 FINALIZADO! $(git rev-parse --short HEAD)"
 
